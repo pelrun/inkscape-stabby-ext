@@ -60,7 +60,7 @@ def propagate_transform(node, parent_transform=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]
         rotate = 0
         portrait = True if (dh>dw) else False
         papersize = 3 if (dw>300 or dh>300) else 4
-        print "(dw:{:f} dh:{:f} portrait:{} papersize:A{})".format(dw,dh,portrait,papersize)
+        print "(dw:{0:f} dh:{1:f} portrait:{2} papersize:A{3})".format(dw,dh,portrait,papersize)
         if (papersize == 4 and portrait) or (papersize == 3 and not portrait):
             # ensure we're in portrait orientation for A4/A5
             # and landscape for A3
@@ -188,7 +188,7 @@ class StabbyEffect(inkex.Effect):
         return points
 
     def convert_circle(self, node):
-        if float(node.get('r'))>2:
+        if float(node.get('r'))>6:
             return []
         pt = [float(node.get('cx')),float(node.get('cy'))] 
         mtx = simpletransform.parseTransform(node.get("transform"))
