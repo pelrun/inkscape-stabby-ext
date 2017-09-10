@@ -133,7 +133,9 @@ class StabbyEffect(inkex.Effect):
         
         points = []
         for node in svg.iterchildren():
-            points += self.convert_node(node)
+            newpoints = self.convert_node(node)
+            if newpoints is not None:
+                points += newpoints
         
         print "G17 (XY plane)"
         print "G21 (millimetres)"
@@ -142,58 +144,57 @@ class StabbyEffect(inkex.Effect):
         print "G0 X0 Y0"
         print ''
 
+        completed = set()
         for point in points:
-            print 'G0 X{0:.2f} Y{1:.2f}'.format(point[0],-point[1])
-            print 'G1 Z{0}'.format(zmin)
-            print 'G0 Z{0}'.format(zmax)
-            print ''
+            if point not in completed:
+                print 'G0 X{0:.2f} Y{1:.2f}'.format(point[0],-point[1])
+                print 'G1 Z{0}'.format(zmin)
+                print 'G0 Z{0}'.format(zmax)
+                print ''
+                completed.add(point)
+            else:
+                print "(dropped duplicate)"
 
         print 'G0 Z0'
         print 'G53 X-5 Y-5 (return to home)'
 
 
     def convert_node(self, node):
-    
-        # Parse tags that don't draw any layers
-        if node.tag == addNS("namedview", "sodipodi"):
-            return []
-        elif node.tag == addNS("defs", "svg"):
-            return []
-        elif node.tag == addNS("metadata", "svg"):
-            return []
-        elif node.tag not in [
+        points = []
+        if node.tag in [
             addNS("g", "svg"),
             addNS("a", "svg"),
-            addNS("switch", "svg"),
-            addNS("path", "svg"),
-            addNS("circle", "svg")]:
-            # An unsupported element
-            return []
-
-        points = []
-        if node.tag == addNS("g", "svg"):
+            addNS("switch", "svg")]:
             for subnode in node:
-                points += self.convert_node(subnode)
-
-        elif (node.tag == addNS("a", "svg")
-              or node.tag == addNS("switch", "svg")):
-            # Treat anchor and switch as a group
-            for subnode in node:
-                points += self.convert_node(subnode)
+                for point in self.convert_node(subnode):
+                    yield point
+                
         elif self.useNodes and node.tag == addNS("path", "svg"):
-            points = self.convert_path(node)
-        elif self.useCircles and node.tag == addNS("circle", "svg"):
-            points = self.convert_circle(node)
+            for point in self.convert_path(node):
+                yield point
+            
+        elif self.useCircles:
+            if node.tag == addNS("circle", "svg"):
+                yield self.convert_circle(node)
+                
+            elif node.tag == addNS('ellipse', 'svg'):
+                yield self.convert_ellipse(node)
 
-        return points
-
-    def convert_circle(self, node):
-        if float(node.get('r'))>6:
-            return []
+    def emit_point(self,node):
         pt = [float(node.get('cx')),float(node.get('cy'))] 
         mtx = simpletransform.parseTransform(node.get("transform"))
         simpletransform.applyTransformToPoint(mtx, pt)
-        return [pt]
+        return tuple(pt)
+    
+    def convert_circle(self, node):
+        #print "(circle cx:{0} cy:{1} r:{2})".format(node.get('cx'),node.get('cy'),node.get('r'))
+        if float(node.get('r'))<6:
+            return self.emit_point(node)
+
+    def convert_ellipse(self, node):
+        #print "(ellipse cx:{0} cy:{1} rx:{2} ry:{3})".format(node.get('cx'),node.get('cy'),node.get('rx'),node.get('ry'))
+        if float(node.get('rx'))<6:
+            return self.emit_point(node)
 
     def convert_path(self, node):
     
