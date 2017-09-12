@@ -10,6 +10,12 @@ zmin=-35
 travel_speed=20000
 plunge_speed=10
 
+debug_enabled=False
+
+def debug(str):
+    if debug_enabled:
+        print str
+
 def get_dimension(s="1024"):
     """Convert an SVG length string from arbitrary units to mm"""
     if s == "":
@@ -150,6 +156,7 @@ class StabbyEffect(inkex.Effect):
         completed = set()
         for point in points:
             if point not in completed:
+                debug("({})".format(point[2]))
                 print 'G0 X{0:.2f} Y{1:.2f}'.format(point[0],-point[1])
                 print 'G1 Z{0}'.format(zmin)
                 print 'G0 Z{0}'.format(zmax)
@@ -187,17 +194,21 @@ class StabbyEffect(inkex.Effect):
         pt = [float(node.get('cx')),float(node.get('cy'))]
         mtx = simpletransform.parseTransform(node.get("transform"))
         simpletransform.applyTransformToPoint(mtx, pt)
-        return tuple(pt)
+        return (pt[0],pt[1],node.get("id"))
 
     def convert_circle(self, node):
-        #print "(circle cx:{0} cy:{1} r:{2})".format(node.get('cx'),node.get('cy'),node.get('r'))
+        debug("(circle cx:{0} cy:{1} r:{2} id:{3})".format(node.get('cx'),node.get('cy'),node.get('r'),node.get('id')))
         if float(node.get('r'))<6:
             return self.emit_point(node)
+        else:
+            debug("(ignored)")
 
     def convert_ellipse(self, node):
-        #print "(ellipse cx:{0} cy:{1} rx:{2} ry:{3})".format(node.get('cx'),node.get('cy'),node.get('rx'),node.get('ry'))
+        debug("(ellipse cx:{0} cy:{1} rx:{2} ry:{3} id:{4})".format(node.get('cx'),node.get('cy'),node.get('rx'),node.get('ry'),node.get('id')))
         if float(node.get('rx'))<6:
             return self.emit_point(node)
+        else:
+            debug("(ignored)")
 
     def convert_path(self, node):
 
