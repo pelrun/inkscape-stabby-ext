@@ -115,13 +115,13 @@ def path_to_points(path_d, mtx=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]):
             simpletransform.applyTransformToPoint(mtx, pt)
 
     return points
-        
+
 class StabbyEffect(inkex.Effect):
     def __init__(self):
         inkex.Effect.__init__(self)
         self.useCircles = True
         self.useNodes = False
-        
+
     def effect(self):
         svg = self.document.getroot()
         propagate_transform(svg)
@@ -130,13 +130,16 @@ class StabbyEffect(inkex.Effect):
         width  = self.unittouu(svg.get('width'))
         height = self.unittouu(svg.get('height'))
         centre = (width/2, height/2)
-        
+
         points = []
         for node in svg.iterchildren():
             newpoints = self.convert_node(node)
             if newpoints is not None:
                 points += newpoints
-        
+
+        points = [x for x in points if x is not None]
+        print "(Number of points:{})".format(len(points))
+
         print "G17 (XY plane)"
         print "G21 (millimetres)"
         print ''
@@ -168,24 +171,24 @@ class StabbyEffect(inkex.Effect):
             for subnode in node:
                 for point in self.convert_node(subnode):
                     yield point
-                
+
         elif self.useNodes and node.tag == addNS("path", "svg"):
             for point in self.convert_path(node):
                 yield point
-            
+
         elif self.useCircles:
             if node.tag == addNS("circle", "svg"):
                 yield self.convert_circle(node)
-                
+
             elif node.tag == addNS('ellipse', 'svg'):
                 yield self.convert_ellipse(node)
 
     def emit_point(self,node):
-        pt = [float(node.get('cx')),float(node.get('cy'))] 
+        pt = [float(node.get('cx')),float(node.get('cy'))]
         mtx = simpletransform.parseTransform(node.get("transform"))
         simpletransform.applyTransformToPoint(mtx, pt)
         return tuple(pt)
-    
+
     def convert_circle(self, node):
         #print "(circle cx:{0} cy:{1} r:{2})".format(node.get('cx'),node.get('cy'),node.get('r'))
         if float(node.get('r'))<6:
@@ -197,7 +200,7 @@ class StabbyEffect(inkex.Effect):
             return self.emit_point(node)
 
     def convert_path(self, node):
-    
+
         mtx = simpletransform.parseTransform(node.get("transform"))
 
         return path_to_points(node.get("d"), mtx)
