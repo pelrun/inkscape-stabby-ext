@@ -5,6 +5,10 @@ import inkex
 from inkex import NSS, addNS, etree, errormsg
 import simplepath, simpletransform
 
+camera_offset=[11.3,-3.8]
+coordinate_system="G54 (A4 centre reference)"
+origin = None
+
 zmax=-15
 zmin=-35
 travel_speed=20000
@@ -48,6 +52,7 @@ def get_dimension(s="1024"):
 
 def propagate_transform(node, parent_transform=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]):
     """Propagate transform to remove inheritance"""
+    global coordinate_system
 
     # Don't enter non-graphical portions of the document
     if (node.tag == addNS("namedview", "sodipodi")
@@ -73,9 +78,9 @@ def propagate_transform(node, parent_transform=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]
             print "(rotated)"
             rotate=90
         if papersize == 4:
-            print "G54 (A4 centre reference)"
+            coordinate_system = "G54 (A4 centre reference)"
         else:
-            print "G57 (A3 centre reference)"
+            coordinate_system = "G57 (A3 centre reference)"
         t = "rotate({4:f}) translate({0:f}, {1:f}) scale({2:f},{3:f})".format(-vx, -vy, dw/vw, dh/vh, rotate)
         this_transform = simpletransform.parseTransform(t, parent_transform)
         this_transform = simpletransform.parseTransform(node.get("transform"), this_transform)
@@ -146,18 +151,24 @@ class StabbyEffect(inkex.Effect):
         points = [x for x in points if x is not None]
         print "(Number of points:{})".format(len(points))
 
+        if origin == None:
+            print coordinate_system
+        else:
+            print 'G10 P6 L20 X{2:.2f} Y{3:.2f} (origin X{0:.2f} Y{1:.2f} offset X{4:.2f} Y{5:.2f})'.format(origin[0],origin[1],origin[0]+camera_offset[0], origin[1]+camera_offset[1], camera_offset[0], camera_offset[1])
+            print 'G59 (custom origin)'
+
         print "G17 (XY plane)"
         print "G21 (millimetres)"
         print ''
         print "G0 Z0 F20000"
-        print "G0 X0 Y0"
+        print "G0 X0 Y0 F20000"
         print ''
 
         completed = set()
         for point in points:
             if point not in completed:
                 debug("({})".format(point[2]))
-                print 'G0 X{0:.2f} Y{1:.2f}'.format(point[0],-point[1])
+                print 'G0 X{0:.2f} Y{1:.2f}'.format(point[0],point[1])
                 print 'G1 Z{0}'.format(zmin)
                 print 'G0 Z{0}'.format(zmax)
                 print ''
@@ -191,10 +202,13 @@ class StabbyEffect(inkex.Effect):
                 yield self.convert_ellipse(node)
 
     def emit_point(self,node):
+        global origin
         pt = [float(node.get('cx')),float(node.get('cy'))]
         mtx = simpletransform.parseTransform(node.get("transform"))
         simpletransform.applyTransformToPoint(mtx, pt)
-        return (pt[0],pt[1],node.get("id"))
+        if node.get('id') == 'origin':
+            origin = (pt[0],-pt[1])
+        return (pt[0],-pt[1],node.get("id"))
 
     def convert_circle(self, node):
         debug("(circle cx:{0} cy:{1} r:{2} id:{3})".format(node.get('cx'),node.get('cy'),node.get('r'),node.get('id')))
