@@ -103,7 +103,7 @@ class StabbyOutput(inkex.OutputExtension):
         if self.origin == None:
             self.output(self.coordinate_system)
         else:
-            self.output('G10 P6 L20 X{2:.2f} Y{3:.2f} (origin X{0:.2f} Y{1:.2f} offset X{4:.2f} Y{5:.2f})\n'.format(origin[0],origin[1],origin[0]+camera_offset[0], origin[1]+camera_offset[1], camera_offset[0], camera_offset[1]))
+            self.output('G10 P6 L20 X{2:.2f} Y{3:.2f} (origin X{0:.2f} Y{1:.2f} offset X{4:.2f} Y{5:.2f})\n'.format(self.origin.x,self.origin.y, self.origin.x+camera_offset[0],self.origin.y+camera_offset[1], camera_offset[0], camera_offset[1]))
             self.output('G59 (custom origin)\n')
 
         self.output("G17 (XY plane)\n")
