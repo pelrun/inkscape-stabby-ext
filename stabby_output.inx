@@ -1,16 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
-    <_name>Stabby McStabFace Output</_name>
-    <id>org.inkscape.output.gcode</id>
-    <dependency type="executable" location="extensions">stabby_output.py</dependency>
-	<dependency type="executable" location="extensions">inkex.py</dependency>
+    <name>Stabby McStabFace Output</name>
+    <id>org.inkscape.output.stab</id>
+    <dependency type="extension">org.inkscape.output.svg.inkscape</dependency>
+    <dependency type="executable" location="inx">stabby_output.py</dependency>
     <output>
         <extension>.gcode</extension>
         <mimetype>image/x-gcode</mimetype>
-        <_filetypename>Stabby G-Code File (*.gcode)</_filetypename>
-        <_filetypetooltip>Save gcode for Stabby McStabFace</_filetypetooltip>
+        <filetypename>Stabby G-Code File (*.gcode)</filetypename>
+        <filetypetooltip>Export gcode for Stabby McStabFace</filetypetooltip>
+        <dataloss>true</dataloss>
     </output>
     <script>
-        <command reldir="extensions" interpreter="python">stabby_output.py</command>
+        <command location="inx" interpreter="python">stabby_output.py</command>
     </script>
 </inkscape-extension>

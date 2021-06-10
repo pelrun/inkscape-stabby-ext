@@ -2,12 +2,9 @@
 
 import sys
 import inkex
-from inkex import NSS, addNS, etree, errormsg
-import simplepath, simpletransform
+from inkex import NSS, addNS, etree, errormsg, Transform, Path
 
 camera_offset=[11.3,-3.8]
-coordinate_system="G54 (A4 centre reference)"
-origin = None
 
 zmax=-15
 zmin=-35
@@ -18,218 +15,119 @@ debug_enabled=False
 
 def debug(str):
     if debug_enabled:
-        print str
+        print(str)
 
-def get_dimension(s="1024"):
-    """Convert an SVG length string from arbitrary units to mm"""
-    if s == "":
-        return 0
-    try:
-        last = int(s[-1])
-    except:
-        last = None
+class StabbyOutput(inkex.OutputExtension):
+    """Save as Stabby Output"""
 
-    if type(last) == int:
-        return float(s)
-    elif s[-1] == "%":
-        return 1024
-    elif s[-2:] == "px":
-        return float(s[:-2])/3.54
-    elif s[-2:] == "pt":
-        return float(s[:-2])*1.25/3.54
-    elif s[-2:] == "em":
-        return float(s[:-2])*16/3.54
-    elif s[-2:] == "mm":
-        return float(s[:-2])*3.54/3.54
-    elif s[-2:] == "pc":
-        return float(s[:-2])*15/3.54
-    elif s[-2:] == "cm":
-        return float(s[:-2])*35.43/3.54
-    elif s[-2:] == "in":
-        return float(s[:-2])*90/3.54
-    else:
-        return 1024
+    def header(self, node: inkex.elements._svg.SvgDocumentElement):
+        """Calculate the header and global orientation"""
 
-def propagate_transform(node, parent_transform=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]):
-    """Propagate transform to remove inheritance"""
-    global coordinate_system
+        # Compose the transformations
+        if node.tag == addNS("svg", "svg") and node.get("viewBox"):
+            vx, vy, vw, vh = node.get_viewbox()
+            dw = node.uutounit(node.get("width", vw), "mm")
+            dh = node.uutounit(node.get("height", vh), "mm")
+            vx = vx+(dw/2)
+            vy = vy+(dh/2)
+            rotate = 0
+            portrait = True if (dh>dw) else False
+            papersize = 3 if (dw>300 or dh>300) else 4
+            self.output("(dw:{0:f} dh:{1:f} portrait:{2} papersize:A{3})\n".format(dw,dh,portrait,papersize))
+            if (papersize == 4 and portrait) or (papersize == 3 and not portrait):
+                # ensure we're in portrait orientation for A4/A5
+                # and landscape for A3
+                self.output("(rotated)\n")
+                rotate=90
+            if papersize == 4:
+                self.coordinate_system = "G54 (A4 centre reference)\n"
+            else:
+                self.coordinate_system = "G57 (A3 centre reference)\n"
+            t = "scale(1,-1) rotate({4:f}) translate({0:f}, {1:f}) scale({2:f},{3:f})".format(-vx, -vy, dw/vw, dh/vh, rotate)
+            return Transform(t)
 
-    # Don't enter non-graphical portions of the document
-    if (node.tag == addNS("namedview", "sodipodi")
-        or node.tag == addNS("defs", "svg")
-        or node.tag == addNS("metadata", "svg")
-        or node.tag == addNS("foreignObject", "svg")):
-        return
+    def process_path(self, path: inkex.PathElement, transform):
+        return 'path'
 
-    # Compose the transformations
-    if node.tag == addNS("svg", "svg") and node.get("viewBox"):
-        vx, vy, vw, vh = [get_dimension(x) for x in node.get("viewBox").split()]
-        dw = get_dimension(node.get("width", vw))
-        dh = get_dimension(node.get("height", vh))
-        vx = vx+(dw/2)
-        vy = vy+(dh/2)
-        rotate = 0
-        portrait = True if (dh>dw) else False
-        papersize = 3 if (dw>300 or dh>300) else 4
-        print "(dw:{0:f} dh:{1:f} portrait:{2} papersize:A{3})".format(dw,dh,portrait,papersize)
-        if (papersize == 4 and portrait) or (papersize == 3 and not portrait):
-            # ensure we're in portrait orientation for A4/A5
-            # and landscape for A3
-            print "(rotated)"
-            rotate=90
-        if papersize == 4:
-            coordinate_system = "G54 (A4 centre reference)"
-        else:
-            coordinate_system = "G57 (A3 centre reference)"
-        t = "rotate({4:f}) translate({0:f}, {1:f}) scale({2:f},{3:f})".format(-vx, -vy, dw/vw, dh/vh, rotate)
-        this_transform = simpletransform.parseTransform(t, parent_transform)
-        this_transform = simpletransform.parseTransform(node.get("transform"), this_transform)
-        del node.attrib["viewBox"]
-    else:
-        this_transform = simpletransform.parseTransform(node.get("transform"), parent_transform)
+    def process_circle(self, circle: inkex.Circle, transform: inkex.Transform):
+        absolute_tfm = transform * circle.composed_transform()
+        position = absolute_tfm.apply_to_point(circle.center)
+        if circle.get_id() == 'origin':
+            self.origin = position
+        return position
 
-    if (node.tag == addNS("svg", "svg")
-        or node.tag == addNS("g", "svg")
-        or node.tag == addNS("a", "svg")
-        or node.tag == addNS("switch", "svg")):
+    def process_group(self, group, transform):
+        """flatten layers and groups to avoid recursion"""
+        result = []
+        for child in group:
+            if not isinstance(child, inkex.ShapeElement):
+                continue
+            if child.is_visible():
+                if isinstance(child, inkex.Group):
+                    result += self.process_group(child, transform)
+                elif self.useNodes and isinstance(child, inkex.PathElement):
+                    result.append(self.process_path(child, transform))
+                elif self.useCircles:
+                    if (isinstance(child, inkex.Circle) and child.radius < 6) or (isinstance(child, inkex.Ellipse) and child.radius.x < 6):
+                        result.append(self.process_circle(child, transform))
+                # else:
+                #     # This only works for shape elements (not text yet!)
+                #     new_elem = child.replace_with(child.to_path_element())
+                #     # Element is given composed transform b/c it's not added back to doc
+                #     new_elem.transform = child.composed_transform()
+                #     self.process_path(new_elem, transform)
+        return result
 
-        # Remove the transform attribute
-        if "transform" in node.keys():
-            del node.attrib["transform"]
+    def add_arguments(self, pars):
+        #pars.add_argument('--useNodes')
+        pass
 
-        # Continue propagating on subelements
-        for c in node.iterchildren():
-            propagate_transform(c, this_transform)
-    else:
-        # This element is not a container
-        node.set("transform", simpletransform.formatTransform(this_transform))
+    def output(self, text: str):
+        self.stream.write(text.encode("ascii"))
 
-def path_to_points(path_d, mtx=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]):
-
-    # Exit on empty paths
-    if not path_d:
-        return []
-
-    # Parse the path
-    path = simplepath.parsePath(path_d)
-
-    points = []
-
-    for s in path:
-        cmd, params = s
-        if cmd not in ['Z','H','V']:
-            points.append(params[-2:])
-
-    # Apply the transformation
-    if mtx != [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]:
-        for pt in points:
-            simpletransform.applyTransformToPoint(mtx, pt)
-
-    return points
-
-class StabbyEffect(inkex.Effect):
-    def __init__(self):
-        inkex.Effect.__init__(self)
+    def save(self, stream):
+        self.options.debug = False
         self.useCircles = True
         self.useNodes = False
+        self.stream = stream
+        self.origin = None
+        self.coordinate_system="G54 (A4 centre reference)\n"
 
-    def effect(self):
         svg = self.document.getroot()
-        propagate_transform(svg)
+        output_transform = self.header(svg)
 
-        # Again, there are two ways to get the attibutes:
-        width  = self.unittouu(svg.get('width'))
-        height = self.unittouu(svg.get('height'))
-        centre = (width/2, height/2)
+        points=self.process_group(svg, output_transform)
 
-        points = []
-        for node in svg.iterchildren():
-            newpoints = self.convert_node(node)
-            if newpoints is not None:
-                points += newpoints
+        self.output("(Number of points:{})\n".format(len(points)))
 
-        points = [x for x in points if x is not None]
-        print "(Number of points:{})".format(len(points))
-
-        if origin == None:
-            print coordinate_system
+        if self.origin == None:
+            self.output(self.coordinate_system)
         else:
-            print 'G10 P6 L20 X{2:.2f} Y{3:.2f} (origin X{0:.2f} Y{1:.2f} offset X{4:.2f} Y{5:.2f})'.format(origin[0],origin[1],origin[0]+camera_offset[0], origin[1]+camera_offset[1], camera_offset[0], camera_offset[1])
-            print 'G59 (custom origin)'
+            self.output('G10 P6 L20 X{2:.2f} Y{3:.2f} (origin X{0:.2f} Y{1:.2f} offset X{4:.2f} Y{5:.2f})\n'.format(origin[0],origin[1],origin[0]+camera_offset[0], origin[1]+camera_offset[1], camera_offset[0], camera_offset[1]))
+            self.output('G59 (custom origin)\n')
 
-        print "G17 (XY plane)"
-        print "G21 (millimetres)"
-        print ''
-        print "G0 Z0 F20000"
-        print "G0 X0 Y0 F20000"
-        print ''
+        self.output("G17 (XY plane)\n")
+        self.output("G21 (millimetres)\n")
+        self.output('\n')
+        self.output("G0 Z0 F20000\n")
+        self.output("G0 X0 Y0 F20000\n")
+        self.output('\n')
 
         completed = set()
         for point in points:
             if point not in completed:
-                debug("({})".format(point[2]))
-                print 'G0 X{0:.2f} Y{1:.2f}'.format(point[0],point[1])
-                print 'G1 Z{0}'.format(zmin)
-                print 'G0 Z{0}'.format(zmax)
-                print ''
+                debug("({})".format(point))
+                self.output('G0 X{0:.2f} Y{1:.2f}\n'.format(point.x,point.y))
+                self.output('G1 Z{0}\n'.format(zmin))
+                self.output('G0 Z{0}\n'.format(zmax))
+                self.output('\n')
                 completed.add(point)
             else:
-                print "(dropped duplicate)"
+                self.output("(dropped duplicate)\n")
 
-        print 'G0 Z0'
-        print 'G53 X-5 Y-5 (return to home)'
-
-
-    def convert_node(self, node):
-        points = []
-        if node.tag in [
-            addNS("g", "svg"),
-            addNS("a", "svg"),
-            addNS("switch", "svg")]:
-            for subnode in node:
-                for point in self.convert_node(subnode):
-                    yield point
-
-        elif self.useNodes and node.tag == addNS("path", "svg"):
-            for point in self.convert_path(node):
-                yield point
-
-        elif self.useCircles:
-            if node.tag == addNS("circle", "svg"):
-                yield self.convert_circle(node)
-
-            elif node.tag == addNS('ellipse', 'svg'):
-                yield self.convert_ellipse(node)
-
-    def emit_point(self,node):
-        global origin
-        pt = [float(node.get('cx')),float(node.get('cy'))]
-        mtx = simpletransform.parseTransform(node.get("transform"))
-        simpletransform.applyTransformToPoint(mtx, pt)
-        if node.get('id') == 'origin':
-            origin = (pt[0],-pt[1])
-        return (pt[0],-pt[1],node.get("id"))
-
-    def convert_circle(self, node):
-        debug("(circle cx:{0} cy:{1} r:{2} id:{3})".format(node.get('cx'),node.get('cy'),node.get('r'),node.get('id')))
-        if float(node.get('r'))<6:
-            return self.emit_point(node)
-        else:
-            debug("(ignored)")
-
-    def convert_ellipse(self, node):
-        debug("(ellipse cx:{0} cy:{1} rx:{2} ry:{3} id:{4})".format(node.get('cx'),node.get('cy'),node.get('rx'),node.get('ry'),node.get('id')))
-        if float(node.get('rx'))<6:
-            return self.emit_point(node)
-        else:
-            debug("(ignored)")
-
-    def convert_path(self, node):
-
-        mtx = simpletransform.parseTransform(node.get("transform"))
-
-        return path_to_points(node.get("d"), mtx)
+        self.output('G0 Z0\n')
+        self.output('G53 X-5 Y-5 (return to home)\n')
 
 if __name__ == '__main__':
-    e = StabbyEffect()
-    e.affect(output=False)
+    StabbyOutput().run()
+
